@@ -24,7 +24,7 @@ resource "aws_subnet" "public_subnet" {
   }
 }
 
-# Private Subnet (For Database / RDS)
+# Private Subnet 1 (For Database / RDS)
 resource "aws_subnet" "private_subnet_1" {
   vpc_id            = aws_vpc.cloudops_vpc.id
   cidr_block        = "10.0.2.0/24"
@@ -34,6 +34,7 @@ resource "aws_subnet" "private_subnet_1" {
   }
 }
 
+# Private Subnet 2 (For Database Multi-AZ Support)
 resource "aws_subnet" "private_subnet_2" {
   vpc_id            = aws_vpc.cloudops_vpc.id
   cidr_block        = "10.0.3.0/24"
@@ -138,8 +139,145 @@ resource "aws_db_instance" "postgres_db" {
   instance_class         = "db.t3.micro"
   db_name                = "cloudopsdb"
   username               = "dbadmin"
-  password               = "SecurePassword123!" # Replace with environment variables in production
+  password               = "SecurePassword123!"
   db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
   skip_final_snapshot    = true
+}
+
+# ==========================================
+# 5. SERVERLESS ACCESS PREPARATION
+# ==========================================
+resource "aws_iam_role" "lambda_execution_role" {
+  name = "CloudOpsLambdaLeastPrivilegeRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = ["lambda.amazonaws.com", "sagemaker.amazonaws.com"]
+        }
+      }
+    ]
+  })
+}
+
+# ==========================================
+# 6. BIG DATA, AI & STREAM PROCESSING SUITE
+# ==========================================
+
+# 6.1 Real-Time Data Ingest Engine (Amazon Kinesis)
+resource "aws_kinesis_stream" "telemetry_stream" {
+  name             = "cloudops-realtime-telemetry-stream"
+  shard_count      = 1
+  retention_period = 24
+
+  tags = {
+    Environment = "Production"
+    Application = "CloudOps-Analytics"
+  }
+}
+
+# 6.2 Enterprise Cloud Data Warehouse (Amazon Redshift)
+resource "aws_redshift_cluster" "analytics_warehouse" {
+  cluster_identifier  = "cloudops-enterprise-warehouse"
+  database_name       = "analytics_db"
+  master_username     = "awsuser"
+  master_password     = "SecurePass1234!"
+  node_type           = "dc2.large"
+  cluster_type        = "single-node"
+  skip_final_snapshot = true
+
+  tags = {
+    Environment = "Production"
+    Type        = "Data-Warehouse"
+  }
+}
+
+# 6.3 Automated Machine Learning Model Instance (Amazon SageMaker)
+resource "aws_sagemaker_model" "inference_model" {
+  name               = "cloudops-predictive-inference-model"
+  execution_role_arn = aws_iam_role.lambda_execution_role.arn
+
+  primary_container {
+    image = "683313688378.dkr.ecr.us-east-1.amazonaws.com/sagemaker-scikit-learn:0.23-1-cpu-py3"
+  }
+}
+
+# 6.4 SageMaker Serverless Inference Endpoint Configuration
+resource "aws_sagemaker_endpoint_configuration" "ml_endpoint_config" {
+  name = "cloudops-ml-endpoint-config"
+
+  production_variants {
+    variant_name           = "AllTraffic"
+    model_name             = aws_sagemaker_model.inference_model.name
+    initial_instance_count = 1
+    instance_type          = "ml.t2.medium"
+  }
+}
+
+resource "aws_sagemaker_endpoint" "ml_inference_serving" {
+  name                 = "cloudops-predictive-serving-endpoint"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.ml_endpoint_config.name
+}
+# ==========================================
+# 7. BIG DATA, AI & STREAM PROCESSING SUITE
+# ==========================================
+
+# 7.1 Real-Time Data Ingest Engine (Amazon Kinesis)
+resource "aws_kinesis_stream" "telemetry_stream" {
+  name             = "cloudops-realtime-telemetry-stream"
+  shard_count      = 1
+  retention_period = 24
+
+  tags = {
+    Environment = "Production"
+    Application = "CloudOps-Analytics"
+  }
+}
+
+# 7.2 Enterprise Cloud Data Warehouse (Amazon Redshift)
+resource "aws_redshift_cluster" "analytics_warehouse" {
+  cluster_identifier = "cloudops-enterprise-warehouse"
+  database_name      = "analytics_db"
+  master_username    = "awsuser"
+  master_password    = "SecurePass1234!" # In production, use secret management tokens
+  node_type          = "dc2.large"
+  cluster_type       = "single-node"
+  skip_final_snapshot = true
+
+  tags = {
+    Environment = "Production"
+    Type        = "Data-Warehouse"
+  }
+}
+
+# 7.3 Automated Machine Learning Model Instance (Amazon SageMaker)
+resource "aws_sagemaker_model" "inference_model" {
+  name               = "cloudops-predictive-inference-model"
+  execution_role_arn = aws_iam_role.lambda_role.arn # Reuses secure operational execution execution properties
+
+  primary_container {
+    image = "683313688378.dkr.ecr.us-east-1.amazonaws.com/sagemaker-scikit-learn:0.23-1-cpu-py3" # Standard pre-built AWS ML image
+  }
+}
+
+# 7.4 SageMaker Serverless Inference Endpoint Configuration
+resource "aws_sagemaker_endpoint_configuration" "ml_endpoint_config" {
+  name = "cloudops-ml-endpoint-config"
+
+  production_variants {
+    variant_name           = "AllTraffic"
+    model_name             = aws_sagemaker_model.inference_model.name
+    initial_instance_count = 1
+    instance_type          = "ml.t2.medium"
+  }
+}
+
+resource "aws_sagemaker_endpoint" "ml_inference_serving" {
+  name                 = "cloudops-predictive-serving-endpoint"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.ml_endpoint_config.name
 }
